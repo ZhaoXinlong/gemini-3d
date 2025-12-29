@@ -2,93 +2,127 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Gemini 宇宙 3D 矩阵 (修复版)</title>
+    <title>Gemini 极简宇宙 (兼容版)</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #020205; color: white; font-family: sans-serif; }
-        #ui { position: absolute; top: 20px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
-        #error-log { position: absolute; bottom: 10px; left: 10px; color: #ff4444; font-size: 12px; background: rgba(0,0,0,0.5); }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        canvas { display: block; cursor: move; }
+        #ui { position: absolute; top: 20px; left: 20px; pointer-events: none; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        .legend { font-size: 12px; color: #aaa; margin-top: 5px; }
+        #details { position: absolute; bottom: 20px; right: 20px; background: rgba(20,20,30,0.8); padding: 15px; border-radius: 8px; border: 1px solid #4285f4; display: none; width: 250px; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h1>Gemini 模型进化星图</h1>
-        <p>如果看到球体，请用鼠标旋转。如果还是黑屏，请看左下角报错。</p>
+        <h2 style="margin:0; color:#4285f4;">Gemini 家族演进 (2023-2025)</h2>
+        <div class="legend">鼠标拖拽旋转 | 越往右越新 | 越往上越强</div>
     </div>
-    <div id="loading">正在召唤 3D 引擎...</div>
-    <div id="error-log"></div>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" onerror="logError('核心库加载失败')"></script>
-    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js" onerror="logError('控制器加载失败')"></script>
+    <div id="details">
+        <h3 id="d-name" style="margin-top:0;"></h3>
+        <p id="d-info" style="font-size:14px; color:#ddd;"></p>
+    </div>
+    <canvas id="starCanvas"></canvas>
 
     <script>
-        function logError(msg) {
-            document.getElementById('error-log').innerHTML += "⚠️ " + msg + "<br>";
-            document.getElementById('loading').innerHTML = "加载失败，请刷新或更换网络。";
+        const canvas = document.getElementById('starCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let angleX = 0.5, angleY = 0.5;
+        let isDragging = false, lastMouseX, lastMouseY;
+
+        // --- Gemini 数据：[名称, 时间轴X, 性能轴Y, 稳定性Z, 颜色] ---
+        const models = [
+            { name: "Bard (LaMDA)", x: -250, y: 50, z: 0, c: "#999", info: "2023.03: Gemini 的前身" },
+            { name: "Gemini 1.0 Ultra", x: -180, y: -200, z: 0, c: "#ea4335", info: "2023.12: 首个对标 GPT-4 的旗舰" },
+            { name: "Gemini 1.5 Pro", x: -80, y: -80, z: 0, c: "#4285f4", info: "2024.02: 开启 100万+ 长文本时代" },
+            { name: "Gemini 1.5 Flash", x: -20, y: 50, z: 0, c: "#fbbc05", info: "2024.05: 极速高性价比模型" },
+            { name: "Gemini 2.0 Flash", x: 80, y: 0, z: 20, c: "#34a853", info: "2025.02: 智能体(Agent)能力爆发" },
+            { name: "Gemini 2.5 DeepThink", x: 150, y: -250, z: -50, c: "#fff", info: "2025.06: 推理链(CoT)强化版" },
+            { name: "Gemini 3.0 Pro", x: 250, y: -150, z: 100, c: "#ff00ff", info: "2025.11: 最新旗舰，Vibe Coding 核心" },
+            { name: "Gemini 3.0 Flash-Lite", x: 280, y: 100, z: 50, c: "#00f2ff", info: "2025.12: 目前全球最廉价的高性能 API" },
+            { name: "Nano Banana Pro", x: 300, y: 180, z: -20, c: "#ffe135", info: "2025.11: 手机本地图像生成之王" }
+        ];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
         }
 
-        window.onload = function() {
-            if (typeof THREE === 'undefined') {
-                logError("浏览器未能识别 THREE 插件");
-                return;
-            }
+        window.addEventListener('resize', resize);
+        resize();
 
-            try {
-                init3D();
-                document.getElementById('loading').style.display = 'none';
-            } catch (e) {
-                logError("JS 运行错误: " + e.message);
-            }
-        };
+        // 交互逻辑
+        window.addEventListener('mousedown', e => { isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY; });
+        window.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            angleY += (e.clientX - lastMouseX) * 0.01;
+            angleX += (e.clientY - lastMouseY) * 0.01;
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+        });
+        window.addEventListener('mouseup', () => isDragging = false);
 
-        function init3D() {
-            const scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            const renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+        function project(x, y, z) {
+            // 简单的 3D 旋转矩阵计算
+            let radX = angleX, radY = angleY;
+            // 绕 Y 轴转
+            let x1 = x * Math.cos(radY) + z * Math.sin(radY);
+            let z1 = z * Math.cos(radY) - x * Math.sin(radY);
+            // 绕 X 轴转
+            let y2 = y * Math.cos(radX) - z1 * Math.sin(radX);
+            let z2 = z1 * Math.cos(radX) + y * Math.cos(radX);
+            
+            // 透视投影
+            let factor = 600 / (600 + z2);
+            return {
+                x: x1 * factor + width / 2,
+                y: y2 * factor + height / 2,
+                scale: factor,
+                alpha: (z2 + 400) / 800
+            };
+        }
 
-            // 如果控制器加载成功就启用，不成功也不影响球体显示
-            if (THREE.OrbitControls) {
-                const controls = new THREE.OrbitControls(camera, renderer.domElement);
-                camera.position.set(5, 5, 10);
-                controls.update();
-            } else {
-                camera.position.z = 12;
-            }
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, width, height);
 
-            // 添加星空背景
-            const starGeo = new THREE.BufferGeometry();
-            const starPoints = [];
-            for(let i=0; i<3000; i++) {
-                starPoints.push((Math.random()-0.5)*100, (Math.random()-0.5)*100, (Math.random()-0.5)*100);
-            }
-            starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPoints, 3));
-            scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0x888888, size: 0.1})));
+            // 绘制连线 (时间轴线)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(66, 133, 244, 0.2)';
+            models.forEach((m, i) => {
+                let p = project(m.x, m.y, m.z);
+                if(i===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
 
-            // 绘制 2025 年末最核心的三个 Gemini 模型
-            const modelData = [
-                { name: "3.0 Pro", x: 4, y: 2, color: 0xff00ff, size: 0.8 },
-                { name: "2.5 DeepThink", x: 0, y: 4, color: 0xffffff, size: 1.0 },
-                { name: "1.5 Pro", x: -4, y: 0, color: 0x4285f4, size: 0.6 }
-            ];
+            // 绘制星球
+            models.sort((a,b) => b.z - a.z); // 简单的深度排序
+            models.forEach(m => {
+                let p = project(m.x, m.y, m.z);
+                
+                // 发光
+                let grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 15 * p.scale);
+                grd.addColorStop(0, m.c);
+                grd.addColorStop(1, 'transparent');
+                
+                ctx.fillStyle = grd;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 20 * p.scale, 0, Math.PI*2);
+                ctx.fill();
 
-            modelData.forEach(m => {
-                const sphere = new THREE.Mesh(
-                    new THREE.SphereGeometry(m.size, 32, 32),
-                    new THREE.MeshBasicMaterial({ color: m.color, wireframe: true })
-                );
-                sphere.position.set(m.x, m.y, 0);
-                scene.add(sphere);
+                // 核心点
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3 * p.scale, 0, Math.PI*2);
+                ctx.fill();
+
+                // 文字
+                ctx.fillStyle = `rgba(255,255,255,${p.alpha})`;
+                ctx.font = `${Math.round(12 * p.scale)}px sans-serif`;
+                ctx.fillText(m.name, p.x + 10, p.y + 5);
             });
 
-            function animate() {
-                requestAnimationFrame(animate);
-                scene.rotation.y += 0.002;
-                renderer.render(scene, camera);
-            }
-            animate();
+            requestAnimationFrame(draw);
         }
+        draw();
     </script>
 </body>
 </html>
